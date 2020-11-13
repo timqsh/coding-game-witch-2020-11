@@ -2,10 +2,11 @@ import random
 import sys
 from dataclasses import dataclass
 from typing import Dict, List, Tuple, Union
+import time
 
 random.seed("witch brews")
 
-Ingredients = Tuple[int, int, int, int]
+Ingredients = Tuple[int, ...]
 
 
 def log(x):
@@ -16,17 +17,24 @@ def log(x):
 class Action:
     action_id: int
     delta: Tuple[int, int, int, int]
-    price: int
 
 
 @dataclass(frozen=True)
 class Brew(Action):
-    pass
+    price: int
 
 
 @dataclass(frozen=True)
 class Spell(Action):
     castable: bool
+    repeatable: bool
+
+
+@dataclass(frozen=True)
+class Learn(Action):
+    tome_index: int
+    tax_count: int
+    repeatable: bool
 
 
 class Rest:
@@ -35,12 +43,22 @@ class Rest:
 
 @dataclass(frozen=True)
 class Witch:
-    inventory: Tuple[int, int, int, int]
-    spells: Tuple[Spell]
+    inventory: Tuple[int, ...]
+    spells: Tuple[Spell, ...]
 
 
-def can_brew(inventory: Ingredients, target: Ingredients) -> bool:
-    return all(i >= t for i, t in zip(inventory, target))
+def can_brew(w: Witch, order: Brew) -> bool:
+    return all(i >= -d for i, d in zip(w.inventory, order.delta))
+
+
+def can_spell(w: Witch, spell: Spell) -> bool:
+    if not spell.castable:
+        return False
+    if any(i + d < 0 for i, d in zip(w.inventory, spell.delta)):
+        return False
+    if sum(w.inventory) + sum(spell.delta) > 10:
+        return False
+    return True
 
 
 def add_inventories(x: Ingredients, y: Ingredients) -> Ingredients:
@@ -49,17 +67,26 @@ def add_inventories(x: Ingredients, y: Ingredients) -> Ingredients:
 
 
 def bfs_fastest_brew(
-    start_witch: Witch, targets: List[Ingredients]
-) -> List[Union[Rest, Spell]]:
+    start_witch: Witch, orders: List[Brew], deadline
+) -> Tuple[List[Union[Rest, Spell]], Union[Brew, str]]:
     queue = [start_witch]
     prev = {start_witch: None}
-    actions: Dict[Witch, Union[Rest, Spell]] = {start_witch: None}
+    actions: Dict[Witch, Union[Rest, Spell]] = {start_witch: None}  # type: ignore
     visited = {start_witch}
+    iterations = 0
     while queue:
+        iterations += 1
+        if time.time() >= deadline:
+            return [], f"time out {iterations} moves"
         cur = queue.pop(0)
 
         # break
-        can_brew_something = any(can_brew(cur.inventory, t) for t in targets)
+        can_brew_something = False
+        o = None
+        for o in orders:
+            if can_brew(cur, o):
+                can_brew_something = True
+                break
         if can_brew_something:
             result = []
             while cur is not None:
@@ -67,8 +94,8 @@ def bfs_fastest_brew(
                 if action is None:
                     break
                 result.append(action)
-                cur = prev[cur]
-            return result
+                cur = prev[cur]  # type: ignore
+            return result, o
 
         # cast
         for i, spell in enumerate(cur.spells):
@@ -82,7 +109,7 @@ def bfs_fastest_brew(
                         castable=False
                         if spell.action_id == s.action_id
                         else s.castable,
-                        price=s.price,
+                        repeatable=s.repeatable,
                     )
                     for s in cur.spells
                 ]
@@ -95,10 +122,9 @@ def bfs_fastest_brew(
             if new_witch in visited:
                 continue
             queue.append(new_witch)
-            prev[new_witch] = cur
+            prev[new_witch] = cur  # type: ignore
             actions[new_witch] = spell
             visited.add(new_witch)
-        all_castable = []
         # rest
         all_castable = tuple(
             [
@@ -106,7 +132,7 @@ def bfs_fastest_brew(
                     action_id=s.action_id,
                     delta=s.delta,
                     castable=True,
-                    price=s.price,
+                    repeatable=s.repeatable,
                 )
                 for s in cur.spells
             ]
@@ -114,61 +140,53 @@ def bfs_fastest_brew(
         rested_witch = Witch(inventory=cur.inventory, spells=tuple(all_castable))
         if rested_witch not in visited:
             queue.append(rested_witch)
-            prev[rested_witch] = cur
+            prev[rested_witch] = cur  # type: ignore
             actions[rested_witch] = Rest()
             visited.add(rested_witch)
-    return []
+    return [], f"not found after {iterations} moves"
 
 
 def main() -> None:
-    # game loop
     while True:
         orders: List[Brew] = []
         spells: List[Spell] = []
+        learns: List[Learn] = []
 
-        action_count = int(input())  # the number of spells and recipes in play
+        action_count = int(input())
         for i in range(action_count):
             # action_id: the unique ID of this spell or recipe
-            # action_type: in the first league:
-            #   BREW; later: CAST, OPPONENT_CAST, LEARN, BREW
-            # delta_0: tier-0 ingredient change
-            # delta_1: tier-1 ingredient change
-            # delta_2: tier-2 ingredient change
-            # delta_3: tier-3 ingredient change
+            # action_type: CAST, OPPONENT_CAST, LEARN, BREW
+            # delta_x: tier-x ingredient change
             # price: the price in rupees if this is a potion
-            # tome_index: in the first two leagues: always 0;
-            #   later: the index in the tome if this is a tome spell,
+            # tome_index: the index in the tome if this is a tome spell,
             #   equal to the read-ahead tax
-            # tax_count: in the first two leagues: always 0;
-            #   later: the amount of taxed tier-0 ingredients you gain
+            # tax_count: the amount of taxed tier-0 ingredients you gain
             #   from learning this spell
-            # castable: in the first league: always 0; later: 1
-            #   if this is a castable player spell
-            # repeatable: for the first two leagues: always 0; later: 1
-            #   if this is a repeatable player spell
+            # castable: 1 if this is a castable player spell
+            # repeatable: 1 if this is a repeatable player spell
             (
-                action_id,
+                action_id_str,
                 action_type,
-                delta_0,
-                delta_1,
-                delta_2,
-                delta_3,
-                price,
-                tome_index,
-                tax_count,
-                castable,
-                repeatable,
+                delta_0_str,
+                delta_1_str,
+                delta_2_str,
+                delta_3_str,
+                price_str,
+                tome_index_str,
+                tax_count_str,
+                castable_str,
+                repeatable_str,
             ) = input().split()
-            action_id = int(action_id)
-            delta_0 = int(delta_0)
-            delta_1 = int(delta_1)
-            delta_2 = int(delta_2)
-            delta_3 = int(delta_3)
-            price = int(price)
-            tome_index = int(tome_index)
-            tax_count = int(tax_count)
-            castable = castable != "0"
-            repeatable = repeatable != "0"
+            action_id = int(action_id_str)
+            delta_0 = int(delta_0_str)
+            delta_1 = int(delta_1_str)
+            delta_2 = int(delta_2_str)
+            delta_3 = int(delta_3_str)
+            price = int(price_str)
+            tome_index = int(tome_index_str)
+            tax_count = int(tax_count_str)
+            castable = castable_str != "0"
+            repeatable = repeatable_str != "0"
 
             if action_type == "BREW":
                 orders.append(
@@ -183,26 +201,28 @@ def main() -> None:
                     Spell(
                         action_id=action_id,
                         delta=(delta_0, delta_1, delta_2, delta_3),
-                        price=price,
                         castable=castable,
+                        repeatable=repeatable,
+                    )
+                )
+            elif action_type == "LEARN":
+                learns.append(
+                    Learn(
+                        action_id=action_id,
+                        delta=(delta_0, delta_1, delta_2, delta_3),
+                        tome_index=tome_index,
+                        tax_count=tax_count,
+                        repeatable=repeatable,
                     )
                 )
 
-            # inv_0: tier-0 ingredients in inventory
-            # score: amount of rupees
         *inventory, score = [int(j) for j in input().split()]
         _ = [int(j) for j in input().split()]  # other player
 
-        # log(inventory)
-        # log(spells)
-        # log(orders)
+        deadline = time.time() + 0.040
 
-        # in the first league: BREW <id>
-        # | WAIT; later: BREW <id>
-        # | CAST <id> [<times>]
-        # | LEARN <id>
-        # | REST
-        # | WAIT
+        my_witch = Witch(inventory=tuple(inventory), spells=tuple(spells))
+
         max_price = 0
         max_ind = 0
         for i, a in enumerate(orders):
@@ -212,21 +232,35 @@ def main() -> None:
                 max_price = a.price
                 max_ind = a.action_id
 
+        #   BREW <id>
+        # | CAST <id> [<times>]
+        # | LEARN <id>
+        # | REST
+        # | WAIT
         if max_price > 0:
             print(f"BREW {max_ind}")
         else:
-            targets = [tuple(-i for i in o.delta) for o in orders]
-            result = bfs_fastest_brew(
-                Witch(inventory=tuple(inventory), spells=tuple(spells)), targets=targets
+            result, order = bfs_fastest_brew(
+                my_witch,
+                orders=orders,
+                deadline=deadline,
             )
             if result:
                 first = result[-1]
+                countdown = f"M{len(result)} to {order.action_id}"  # type: ignore
                 if isinstance(first, Rest):
-                    print("REST")
+                    print(f"REST {countdown}")  # type: ignore
                 else:
-                    print(f"CAST {first.action_id}")
+                    print(f"CAST {first.action_id} {countdown}")
             else:
-                print("REST")
+                out_string = order
+                if any(can_spell(my_witch, s) for s in spells):
+                    random_spell = random.choice(
+                        [s for s in spells if can_spell(my_witch, s)]
+                    )
+                    print(f"CAST {random_spell.action_id} |{out_string}")
+                else:
+                    print(f"REST {out_string}")
 
 
 if __name__ == "__main__":

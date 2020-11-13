@@ -1,17 +1,23 @@
-from sol import Spell, bfs_fastest_brew, Witch
+from sol import Spell, bfs_fastest_brew, Witch, Brew
+import time
 
 
 def test_bfs():
-    result = bfs_fastest_brew(
+    result, _ = bfs_fastest_brew(
         Witch(
             inventory=(1, 0, 0, 0),
             spells=tuple(
-                [Spell(action_id=1, delta=(-1, 0, 0, 1), price=0, castable=True)]
+                [
+                    Spell(
+                        action_id=1, delta=(-1, 0, 0, 1), castable=True, repeatable=True
+                    )
+                ]
             ),
         ),
-        [tuple([0, 0, 0, 1])],
+        [Brew(action_id=777, delta=(0, 0, 0, 1), price=100500)],
+        deadline=time.time() + 0.40,
     )
-    assert isinstance(result[-1], Spell)
+    assert result == []
 
 
 def test_bfs2():
