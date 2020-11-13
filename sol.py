@@ -61,6 +61,10 @@ def can_spell(w: Witch, spell: Spell) -> bool:
     return True
 
 
+def is_freecast(t: Learn) -> bool:
+    return all(d >= 0 for d in t.delta)
+
+
 def add_inventories(x: Ingredients, y: Ingredients) -> Ingredients:
     result: Ingredients = tuple(map(lambda t: t[0] + t[1], zip(x, y)))  # type: ignore
     return result
@@ -98,8 +102,8 @@ def bfs_fastest_brew(
             return result, o
 
         # cast
-        for i, spell in enumerate(cur.spells):
-            if not spell.castable:
+        for spell in cur.spells:
+            if not can_spell(cur, spell):
                 continue
             new_spells = tuple(
                 [
@@ -117,8 +121,6 @@ def bfs_fastest_brew(
             new_witch = Witch(
                 inventory=add_inventories(cur.inventory, spell.delta), spells=new_spells
             )
-            if any(item < 0 for item in new_witch.inventory):
-                continue
             if new_witch in visited:
                 continue
             queue.append(new_witch)
@@ -237,7 +239,25 @@ def main() -> None:
         # | LEARN <id>
         # | REST
         # | WAIT
-        if max_price > 0:
+        freecasts = [t for t in learns if is_freecast(t)]
+        first_tome = [t for t in learns if t.tome_index == 0]
+        log(freecasts)
+        if len(spells) < 6 and learns:
+            if freecasts:
+                first_freecast = min(freecasts, key=lambda t: t.tome_index)
+                can_afford_learn = first_freecast.tome_index <= my_witch.inventory[0]
+                if can_afford_learn:
+                    print(f"LEARN {first_freecast.action_id} grab freecast!")
+                else:
+                    double_blue = [s for s in spells if s.delta == (2, 0, 0, 0)][0]
+                    if double_blue.castable:
+                        txt = f"need to learn {first_freecast.action_id}"
+                        print(f"CAST {double_blue.action_id} {txt}")
+                    else:
+                        print("REST need more blues")
+            else:
+                print(f"LEARN {first_tome[0].action_id} grab something!")
+        elif max_price > 0:
             print(f"BREW {max_ind}")
         else:
             result, order = bfs_fastest_brew(
