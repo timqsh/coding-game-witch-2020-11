@@ -111,9 +111,10 @@ class Witch:
                 repeatable=learn.repeatable,
             ),
         )
+        add_blues = min(learn.tax_count, 10 - sum(self.inventory))
         return replace(
             self,
-            inventory=add_inventories(self.inventory, (learn.tax_count, 0, 0, 0)),
+            inventory=add_inventories(self.inventory, (add_blues, 0, 0, 0)),
             casts=new_casts,
         )
 
@@ -299,27 +300,6 @@ def most_expensive_possible_brew(w: Witch, brews: List[Brew]) -> Optional[Brew]:
     return max_brew
 
 
-def maybe_learn_something(
-    w: Witch, learns: List[Learn]
-) -> Tuple[Union[Learn, Cast, Rest, None], str]:
-    freecasts = [t for t in learns if t.is_freecast()]
-    first_tome = [t for t in learns if t.tome_index == 0]
-    if len(w.casts) < 7 and freecasts:
-        first_freecast = min(freecasts, key=lambda t: t.tome_index)
-        can_afford_learn = first_freecast.tome_index <= w.inventory[0]
-        if can_afford_learn:
-            return first_freecast, "grab freecast!"
-        else:
-            double_blue = [c for c in w.casts if c.delta == (2, 0, 0, 0)][0]
-            if double_blue.castable:
-                return double_blue, f"need to learn {first_freecast.action_id}"
-            else:
-                return Rest(), "need more blues"
-    elif len(w.casts) < 6 and learns:
-        return first_tome[0], "grab something..."
-    return None, ""
-
-
 def learn_profit(learn: Learn, w: Witch, turn) -> Tuple[float, int]:
     average_game_length = 50
     expected_turns_left = average_game_length - turn
@@ -368,7 +348,6 @@ def main() -> None:
         log(can_learn_table)
 
         max_brew = most_expensive_possible_brew(game.my_witch, game.brews)
-        learn_result, msg = maybe_learn_something(game.my_witch, game.learns)
 
         if can_learn_table:
             profit, orig, _, best_learn = can_learn_table[0]
