@@ -1,33 +1,53 @@
 import random
 import sys
-from dataclasses import dataclass
-from typing import Dict, List, Tuple, Union
+from dataclasses import dataclass, replace
+from typing import Dict, List, Optional, Tuple, Union
 import time
 
 random.seed("witch brews")
-
-Ingredients = Tuple[int, ...]
 
 
 def log(x):
     print(x, file=sys.stderr, flush=True)
 
 
+class BaseAction:
+    def smart_action(self, msg="") -> None:
+        if isinstance(self, Brew):
+            self.brew(msg)
+        elif isinstance(self, Cast):
+            self.cast(msg)
+        elif isinstance(self, Learn):
+            self.learn(msg)
+        elif isinstance(self, Rest):
+            self.rest(msg)
+        else:
+            raise ValueError(f"Unknown action {self}")
+
+
 @dataclass(frozen=True)
-class Action:
+class Action(BaseAction):
     action_id: int
-    delta: Tuple[int, int, int, int]
+    delta: Tuple[int, ...]
 
 
 @dataclass(frozen=True)
 class Brew(Action):
     price: int
 
+    def brew(self, msg: str = "") -> None:
+        print(f"BREW {self.action_id} {msg}")
+
 
 @dataclass(frozen=True)
-class Spell(Action):
+class Cast(Action):
     castable: bool
     repeatable: bool
+
+    def cast(self, msg: str = "") -> None:
+        if msg and msg[0].isdigit():
+            msg = "|" + msg
+        print(f"CAST {self.action_id} {msg}")
 
 
 @dataclass(frozen=True)
@@ -36,149 +56,163 @@ class Learn(Action):
     tax_count: int
     repeatable: bool
 
+    def is_freecast(self) -> bool:
+        return all(d >= 0 for d in self.delta)
 
-class Rest:
-    pass
+    def learn(self, msg: str = "") -> None:
+        print(f"LEARN {self.action_id} {msg}")
+
+
+@dataclass(frozen=True)
+class Rest(BaseAction):
+    def rest(self, msg: str = "") -> None:
+        print(f"REST {msg}")
 
 
 @dataclass(frozen=True)
 class Witch:
     inventory: Tuple[int, ...]
-    spells: Tuple[Spell, ...]
+    casts: Tuple[Cast, ...]
+
+    def can_brew(self, brew: Brew) -> bool:
+        return all(i >= -d for i, d in zip(self.inventory, brew.delta))
+
+    def can_cast(self, cast: Cast) -> bool:
+        if not cast.castable:
+            return False
+        if any(i + d < 0 for i, d in zip(self.inventory, cast.delta)):
+            return False
+        if sum(self.inventory) + sum(cast.delta) > 10:
+            return False
+        return True
+
+    def available_casts(self) -> List[Cast]:
+        return [c for c in self.casts if self.can_cast(c)]
+
+    def cast(self, cast: Cast) -> "Witch":
+        new_casts = tuple(
+            replace(c, castable=False) if c == cast else c for c in self.casts
+        )
+        new_inventory = add_inventories(self.inventory, cast.delta)
+        return replace(self, inventory=new_inventory, casts=new_casts)
+
+    def rest(self) -> "Witch":
+        return replace(self, casts=tuple(replace(c, castable=True) for c in self.casts))
+
+    def learn(self, learn: Learn) -> "Witch":
+        new_casts = self.casts + (
+            Cast(
+                action_id=77777,
+                delta=learn.delta,
+                castable=True,
+                repeatable=learn.repeatable,
+            ),
+        )
+        return replace(
+            self,
+            inventory=add_inventories(self.inventory, (learn.tax_count, 0, 0, 0)),
+            casts=new_casts,
+        )
 
 
-def can_brew(w: Witch, order: Brew) -> bool:
-    return all(i >= -d for i, d in zip(w.inventory, order.delta))
+def add_inventories(x: Tuple[int, ...], y: Tuple[int, ...]) -> Tuple[int, ...]:
+    return tuple(map(sum, zip(x, y)))
 
 
-def can_spell(w: Witch, spell: Spell) -> bool:
-    if not spell.castable:
-        return False
-    if any(i + d < 0 for i, d in zip(w.inventory, spell.delta)):
-        return False
-    if sum(w.inventory) + sum(spell.delta) > 10:
-        return False
-    return True
+BfsActions = Union[Rest, Cast, Learn]
 
 
-def is_freecast(t: Learn) -> bool:
-    return all(d >= 0 for d in t.delta)
+@dataclass(frozen=True)
+class BfsSuccess:
+    actions: List[BfsActions]
+    target: Brew
 
 
-def add_inventories(x: Ingredients, y: Ingredients) -> Ingredients:
-    result: Ingredients = tuple(map(lambda t: t[0] + t[1], zip(x, y)))  # type: ignore
-    return result
+@dataclass(frozen=True)
+class BfsFailure:
+    message: str
 
 
 def bfs_fastest_brew(
-    start_witch: Witch, orders: List[Brew], learns: List[Learn], deadline
-) -> Tuple[List[Union[Rest, Spell, Learn]], Union[Brew, str]]:
+    start_witch: Witch, brews: List[Brew], learns: List[Learn], deadline
+) -> Union[BfsSuccess, BfsFailure]:
     queue = [start_witch]
-    prev = {start_witch: None}
-    actions: Dict[Witch, Union[Rest, Spell, Learn]] = {start_witch: None}  # type: ignore
-    visited = {start_witch}
+    prev: Dict[Witch, Optional[Witch]] = {start_witch: None}
+    actions: Dict[Witch, Optional[BfsActions]] = {start_witch: None}
     iterations = 0
     while queue:
         iterations += 1
         if time.time() >= deadline:
-            return [], f"timeout {iterations} moves"
+            return BfsFailure(f"T/O {iterations}M")
         cur = queue.pop(0)
 
         # break
         can_brew_something = False
         o = None
-        for o in orders:
-            if can_brew(cur, o):
+        for o in brews:
+            if cur.can_brew(o):
                 can_brew_something = True
                 break
         if can_brew_something:
-            result = []
-            while cur is not None:
-                action = actions[cur]
+            result: List[BfsActions] = []
+            backtrack: Optional[Witch] = cur
+            while backtrack is not None:
+                action = actions[backtrack]
                 if action is None:
                     break
                 result.append(action)
-                cur = prev[cur]  # type: ignore
-            return result, o
+                backtrack = prev[backtrack]
+            return BfsSuccess(result, o)
 
         # learn
         if iterations == 1 and learns:
             first_tome = learns[0]
             if first_tome.tax_count > 0:
-                new_spells = cur.spells + (
-                    Spell(
-                        action_id=777,
-                        delta=first_tome.delta,
-                        castable=True,
-                        repeatable=first_tome.repeatable,
-                    ),
-                )
-                new_witch = Witch(
-                    inventory=add_inventories(
-                        cur.inventory, (first_tome.tax_count, 0, 0, 0)
-                    ),
-                    spells=new_spells,
-                )
-                if new_witch in visited:
+                new_witch = cur.learn(first_tome)
+                if new_witch in prev:
                     continue
                 queue.append(new_witch)
-                prev[new_witch] = cur  # type: ignore
+                prev[new_witch] = cur
                 actions[new_witch] = first_tome
-                visited.add(new_witch)
         # cast
-        for spell in cur.spells:
-            if not can_spell(cur, spell):
+        for cast in cur.casts:
+            if not cur.can_cast(cast):
                 continue
-            new_spells = tuple(
-                [
-                    Spell(
-                        action_id=s.action_id,
-                        delta=s.delta,
-                        castable=False
-                        if spell.action_id == s.action_id
-                        else s.castable,
-                        repeatable=s.repeatable,
-                    )
-                    for s in cur.spells
-                ]
-            )
-            new_witch = Witch(
-                inventory=add_inventories(cur.inventory, spell.delta), spells=new_spells
-            )
-            if new_witch in visited:
+            new_witch = cur.cast(cast)
+            if new_witch in prev:
                 continue
             queue.append(new_witch)
-            prev[new_witch] = cur  # type: ignore
-            actions[new_witch] = spell
-            visited.add(new_witch)
+            prev[new_witch] = cur
+            actions[new_witch] = cast
         # rest
         all_castable = tuple(
             [
-                Spell(
-                    action_id=s.action_id,
-                    delta=s.delta,
+                Cast(
+                    action_id=c.action_id,
+                    delta=c.delta,
                     castable=True,
-                    repeatable=s.repeatable,
+                    repeatable=c.repeatable,
                 )
-                for s in cur.spells
+                for c in cur.casts
             ]
         )
-        rested_witch = Witch(inventory=cur.inventory, spells=tuple(all_castable))
-        if rested_witch not in visited:
+        rested_witch = Witch(inventory=cur.inventory, casts=tuple(all_castable))
+        if rested_witch not in prev:
             queue.append(rested_witch)
-            prev[rested_witch] = cur  # type: ignore
+            prev[rested_witch] = cur
             actions[rested_witch] = Rest()
-            visited.add(rested_witch)
-    return [], f"not found after {iterations} moves"
+    return BfsFailure(f"not found after {iterations} moves")
 
 
-def main() -> None:
-    while True:
-        orders: List[Brew] = []
-        spells: List[Spell] = []
-        learns: List[Learn] = []
+class GameInput:
+    def __init__(self) -> None:
+        self.brews: List[Brew] = []
+        self.learns: List[Learn] = []
+        self.my_witch: Witch
 
+    def read(self):
         action_count = int(input())
+        casts: List[Cast] = []
         for i in range(action_count):
             # action_id: the unique ID of this spell or recipe
             # action_type: CAST, OPPONENT_CAST, LEARN, BREW
@@ -215,7 +249,7 @@ def main() -> None:
             repeatable = repeatable_str != "0"
 
             if action_type == "BREW":
-                orders.append(
+                self.brews.append(
                     Brew(
                         action_id=action_id,
                         delta=(delta_0, delta_1, delta_2, delta_3),
@@ -223,8 +257,8 @@ def main() -> None:
                     )
                 )
             elif action_type == "CAST":
-                spells.append(
-                    Spell(
+                casts.append(
+                    Cast(
                         action_id=action_id,
                         delta=(delta_0, delta_1, delta_2, delta_3),
                         castable=castable,
@@ -232,7 +266,7 @@ def main() -> None:
                     )
                 )
             elif action_type == "LEARN":
-                learns.append(
+                self.learns.append(
                     Learn(
                         action_id=action_id,
                         delta=(delta_0, delta_1, delta_2, delta_3),
@@ -241,79 +275,84 @@ def main() -> None:
                         repeatable=repeatable,
                     )
                 )
-
         *inventory, score = [int(j) for j in input().split()]
         _ = [int(j) for j in input().split()]  # other player
+        self.my_witch = Witch(inventory=tuple(inventory), casts=tuple(casts))
 
-        start_time = time.time()
-        deadline = start_time + 0.040
 
-        my_witch = Witch(inventory=tuple(inventory), spells=tuple(spells))
+def most_expensive_possible_brew(w: Witch, brews: List[Brew]) -> Optional[Brew]:
+    max_price = 0
+    max_brew = None
+    for b in brews:
+        remaining = add_inventories(w.inventory, b.delta)
+        can_afford = all(x >= 0 for x in remaining)
+        if can_afford and b.price > max_price:
+            max_price = b.price
+            max_brew = b
+    return max_brew
 
-        max_price = 0
-        max_ind = 0
-        for i, a in enumerate(orders):
-            remaining = (a + b for a, b in zip(inventory, a.delta))
-            can_afford = all(x >= 0 for x in remaining)
-            if can_afford and a.price > max_price:
-                max_price = a.price
-                max_ind = a.action_id
 
-        #   BREW <id>
-        # | CAST <id> [<times>]
-        # | LEARN <id>
-        # | REST
-        # | WAIT
-        freecasts = [t for t in learns if is_freecast(t)]
-        first_tome = [t for t in learns if t.tome_index == 0]
-        log(freecasts)
-        if len(spells) < 7 and freecasts:
-            first_freecast = min(freecasts, key=lambda t: t.tome_index)
-            can_afford_learn = first_freecast.tome_index <= my_witch.inventory[0]
-            if can_afford_learn:
-                print(f"LEARN {first_freecast.action_id} grab freecast!")
-            else:
-                double_blue = [s for s in spells if s.delta == (2, 0, 0, 0)][0]
-                if double_blue.castable:
-                    txt = f"need to learn {first_freecast.action_id}"
-                    print(f"CAST {double_blue.action_id} {txt}")
-                else:
-                    print("REST need more blues")
-        elif len(spells) < 6 and learns:
-            print(f"LEARN {first_tome[0].action_id} grab something!")
-        elif max_price > 0:
-            print(f"BREW {max_ind}")
+def maybe_learn_something(
+    w: Witch, learns: List[Learn]
+) -> Tuple[Union[Learn, Cast, Rest, None], str]:
+    freecasts = [t for t in learns if t.is_freecast()]
+    first_tome = [t for t in learns if t.tome_index == 0]
+    if len(w.casts) < 7 and freecasts:
+        first_freecast = min(freecasts, key=lambda t: t.tome_index)
+        can_afford_learn = first_freecast.tome_index <= w.inventory[0]
+        if can_afford_learn:
+            return first_freecast, "grab freecast!"
         else:
-            result, order = bfs_fastest_brew(
-                my_witch,
-                orders=orders,
-                learns=learns,
-                deadline=deadline,
+            double_blue = [c for c in w.casts if c.delta == (2, 0, 0, 0)][0]
+            if double_blue.castable:
+                return double_blue, f"need to learn {first_freecast.action_id}"
+            else:
+                return Rest(), "need more blues"
+    elif len(w.casts) < 6 and learns:
+        return first_tome[0], "grab something..."
+    return None, ""
+
+
+def main() -> None:
+    while True:
+
+        game = GameInput()
+        game.read()
+        start_time = time.time()
+
+        max_brew = most_expensive_possible_brew(game.my_witch, game.brews)
+        learn_result, msg = maybe_learn_something(game.my_witch, game.learns)
+        if learn_result:
+            learn_result.smart_action(msg)
+        elif max_brew:
+            max_brew.brew("BREW!")
+        else:
+            result = bfs_fastest_brew(
+                game.my_witch,
+                brews=game.brews,
+                learns=game.learns,
+                deadline=start_time + 0.040,
             )
-            if result:
-                end_time = time.time()
-                delta_time = end_time - start_time
+            if isinstance(result, BfsSuccess):
+                delta_time = time.time() - start_time
                 delta_time_str = f"{delta_time*1000:.0f}ms"
-                order_id = order.action_id  # type: ignore
-                countdown = f"M{len(result)} to {order_id} {delta_time_str}"
-                first = result[-1]
+                price = result.target.price
+                countdown_text = f"T-{len(result.actions)} {price}💎 {delta_time_str}"
+                first = result.actions[-1]
                 if isinstance(first, Rest):
-                    print(f"REST {countdown}")  # type: ignore
-                elif isinstance(first, Spell):
-                    print(f"CAST {first.action_id} {countdown}")
+                    first.rest(countdown_text)
+                elif isinstance(first, Cast):
+                    first.cast(countdown_text)
                 elif isinstance(first, Learn):
-                    print(f"LEARN {first.action_id} {countdown} + learning!")
+                    first.learn(f"{countdown_text} + learning!")
                 else:
                     raise ValueError(f"Unknown action from BFS: {first}")
             else:
-                out_string = order
-                if any(can_spell(my_witch, s) for s in spells):
-                    random_spell = random.choice(
-                        [s for s in spells if can_spell(my_witch, s)]
-                    )
-                    print(f"CAST {random_spell.action_id} |{out_string}")
+                if game.my_witch.available_casts():
+                    random_cast = random.choice(game.my_witch.available_casts())
+                    random_cast.cast(result.message + " -> cast random")
                 else:
-                    print(f"REST {out_string}")
+                    Rest().rest(result.message + " -> rest")
 
 
 if __name__ == "__main__":
