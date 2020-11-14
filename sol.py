@@ -81,7 +81,7 @@ def bfs_fastest_brew(
     while queue:
         iterations += 1
         if time.time() >= deadline:
-            return [], f"time out {iterations} moves"
+            return [], f"timeout {iterations} moves"
         cur = queue.pop(0)
 
         # break
@@ -245,7 +245,8 @@ def main() -> None:
         *inventory, score = [int(j) for j in input().split()]
         _ = [int(j) for j in input().split()]  # other player
 
-        deadline = time.time() + 0.040
+        start_time = time.time()
+        deadline = start_time + 0.040
 
         my_witch = Witch(inventory=tuple(inventory), spells=tuple(spells))
 
@@ -290,8 +291,12 @@ def main() -> None:
                 deadline=deadline,
             )
             if result:
+                end_time = time.time()
+                delta_time = end_time - start_time
+                delta_time_str = f"{delta_time*1000:.0f}ms"
+                order_id = order.action_id  # type: ignore
+                countdown = f"M{len(result)} to {order_id} {delta_time_str}"
                 first = result[-1]
-                countdown = f"M{len(result)} to {order.action_id}"  # type: ignore
                 if isinstance(first, Rest):
                     print(f"REST {countdown}")  # type: ignore
                 elif isinstance(first, Spell):
@@ -299,7 +304,7 @@ def main() -> None:
                 elif isinstance(first, Learn):
                     print(f"LEARN {first.action_id} {countdown} + learning!")
                 else:
-                    raise ValueError(f"Unknow action from BFS: {first}")
+                    raise ValueError(f"Unknown action from BFS: {first}")
             else:
                 out_string = order
                 if any(can_spell(my_witch, s) for s in spells):
