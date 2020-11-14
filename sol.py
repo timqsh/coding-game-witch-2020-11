@@ -71,11 +71,11 @@ def add_inventories(x: Ingredients, y: Ingredients) -> Ingredients:
 
 
 def bfs_fastest_brew(
-    start_witch: Witch, orders: List[Brew], deadline
-) -> Tuple[List[Union[Rest, Spell]], Union[Brew, str]]:
+    start_witch: Witch, orders: List[Brew], learns: List[Learn], deadline
+) -> Tuple[List[Union[Rest, Spell, Learn]], Union[Brew, str]]:
     queue = [start_witch]
     prev = {start_witch: None}
-    actions: Dict[Witch, Union[Rest, Spell]] = {start_witch: None}  # type: ignore
+    actions: Dict[Witch, Union[Rest, Spell, Learn]] = {start_witch: None}  # type: ignore
     visited = {start_witch}
     iterations = 0
     while queue:
@@ -101,6 +101,30 @@ def bfs_fastest_brew(
                 cur = prev[cur]  # type: ignore
             return result, o
 
+        # learn
+        if iterations == 1 and learns:
+            first_tome = learns[0]
+            if first_tome.tax_count > 0:
+                new_spells = cur.spells + (
+                    Spell(
+                        action_id=777,
+                        delta=first_tome.delta,
+                        castable=True,
+                        repeatable=first_tome.repeatable,
+                    ),
+                )
+                new_witch = Witch(
+                    inventory=add_inventories(
+                        cur.inventory, (first_tome.tax_count, 0, 0, 0)
+                    ),
+                    spells=new_spells,
+                )
+                if new_witch in visited:
+                    continue
+                queue.append(new_witch)
+                prev[new_witch] = cur  # type: ignore
+                actions[new_witch] = first_tome
+                visited.add(new_witch)
         # cast
         for spell in cur.spells:
             if not can_spell(cur, spell):
@@ -242,27 +266,27 @@ def main() -> None:
         freecasts = [t for t in learns if is_freecast(t)]
         first_tome = [t for t in learns if t.tome_index == 0]
         log(freecasts)
-        if len(spells) < 6 and learns:
-            if freecasts:
-                first_freecast = min(freecasts, key=lambda t: t.tome_index)
-                can_afford_learn = first_freecast.tome_index <= my_witch.inventory[0]
-                if can_afford_learn:
-                    print(f"LEARN {first_freecast.action_id} grab freecast!")
-                else:
-                    double_blue = [s for s in spells if s.delta == (2, 0, 0, 0)][0]
-                    if double_blue.castable:
-                        txt = f"need to learn {first_freecast.action_id}"
-                        print(f"CAST {double_blue.action_id} {txt}")
-                    else:
-                        print("REST need more blues")
+        if len(spells) < 7 and freecasts:
+            first_freecast = min(freecasts, key=lambda t: t.tome_index)
+            can_afford_learn = first_freecast.tome_index <= my_witch.inventory[0]
+            if can_afford_learn:
+                print(f"LEARN {first_freecast.action_id} grab freecast!")
             else:
-                print(f"LEARN {first_tome[0].action_id} grab something!")
+                double_blue = [s for s in spells if s.delta == (2, 0, 0, 0)][0]
+                if double_blue.castable:
+                    txt = f"need to learn {first_freecast.action_id}"
+                    print(f"CAST {double_blue.action_id} {txt}")
+                else:
+                    print("REST need more blues")
+        elif len(spells) < 6 and learns:
+            print(f"LEARN {first_tome[0].action_id} grab something!")
         elif max_price > 0:
             print(f"BREW {max_ind}")
         else:
             result, order = bfs_fastest_brew(
                 my_witch,
                 orders=orders,
+                learns=learns,
                 deadline=deadline,
             )
             if result:
@@ -270,8 +294,12 @@ def main() -> None:
                 countdown = f"M{len(result)} to {order.action_id}"  # type: ignore
                 if isinstance(first, Rest):
                     print(f"REST {countdown}")  # type: ignore
-                else:
+                elif isinstance(first, Spell):
                     print(f"CAST {first.action_id} {countdown}")
+                elif isinstance(first, Learn):
+                    print(f"LEARN {first.action_id} {countdown} + learning!")
+                else:
+                    raise ValueError(f"Unknow action from BFS: {first}")
             else:
                 out_string = order
                 if any(can_spell(my_witch, s) for s in spells):
