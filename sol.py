@@ -99,6 +99,9 @@ class Witch:
     def rest(self) -> "Witch":
         return replace(self, casts=tuple(replace(c, castable=True) for c in self.casts))
 
+    def can_learn(self, learn: Learn) -> bool:
+        return self.inventory[0] >= learn.tome_index
+
     def learn(self, learn: Learn) -> "Witch":
         new_casts = self.casts + (
             Cast(
@@ -117,6 +120,10 @@ class Witch:
 
 def add_inventories(x: Tuple[int, ...], y: Tuple[int, ...]) -> Tuple[int, ...]:
     return tuple(map(sum, zip(x, y)))
+
+
+def mul_inventories(x: Tuple[int, ...], y: Tuple[int, ...]) -> Tuple[int, ...]:
+    return tuple(map(lambda t: t[0] * t[1], zip(x, y)))
 
 
 BfsActions = Union[Rest, Cast, Learn]
@@ -313,17 +320,63 @@ def maybe_learn_something(
     return None, ""
 
 
+def learn_profit(learn: Learn, w: Witch, turn) -> Tuple[float, int]:
+    average_game_length = 50
+    expected_turns_left = average_game_length - turn
+    learn_diminishing_coefficient = (
+        0.0 if expected_turns_left < 0 else expected_turns_left / average_game_length
+    )
+
+    weights = (1, 3, 5, 7)
+    freecast_bonus = 10
+
+    result = freecast_bonus if learn.is_freecast() else 0
+    result += sum(mul_inventories(learn.delta, weights))
+
+    free_slots = 10 - sum(w.inventory)
+    result += min(learn.tax_count, free_slots)
+
+    result -= learn.tome_index
+
+    return result * learn_diminishing_coefficient, result
+
+
 def main() -> None:
+    turn = 0
     while True:
+        turn += 1
 
         game = GameInput()
         game.read()
         start_time = time.time()
 
+        profit_worth_to_learn = 5
+        learn_table = [
+            (*learn_profit(s, game.my_witch, turn), game.my_witch.can_learn(s), s)
+            for s in game.learns
+        ]
+        learn_table = [
+            (p, orig, can, learn)
+            for (p, orig, can, learn) in learn_table
+            if p > profit_worth_to_learn
+        ]
+        learn_table.sort(key=lambda x: x[0], reverse=True)
+        can_learn_table = [
+            (p, orig, can, learn) for (p, orig, can, learn) in learn_table if can
+        ]
+
         max_brew = most_expensive_possible_brew(game.my_witch, game.brews)
         learn_result, msg = maybe_learn_something(game.my_witch, game.learns)
-        if learn_result:
-            learn_result.smart_action(msg)
+
+        if can_learn_table:
+            profit, orig, _, best_learn = learn_table[0]
+            best_learn.learn(f"learn profit {profit}(base={orig})")
+        elif learn_table:
+            double_blue = [c for c in w.casts if c.delta == (2, 0, 0, 0)][0]
+            if double_blue.castable:
+                double_blue.cast(f"need to learn {learn_table[0][2].action_id}")
+            else:
+                Rest().rest("need more blues")
         elif max_brew:
             max_brew.brew("BREW!")
         else:
@@ -348,7 +401,19 @@ def main() -> None:
                 else:
                     raise ValueError(f"Unknown action from BFS: {first}")
             else:
-                if game.my_witch.available_casts():
+                first_tome = (
+                    [t for t in game.learns if t.tome_index == 0][0]
+                    if game.learns
+                    else None
+                )
+                if (
+                    game.learns
+                    and first_tome
+                    and first_tome.tax_count >= 3
+                    and sum(game.my_witch.inventory) <= 7
+                ):
+                    first_tome.learn(" -> get some tax at least")
+                elif game.my_witch.available_casts():
                     random_cast = random.choice(game.my_witch.available_casts())
                     random_cast.cast(result.message + " -> cast random")
                 else:
