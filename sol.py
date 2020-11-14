@@ -327,7 +327,7 @@ def learn_profit(learn: Learn, w: Witch, turn) -> Tuple[float, int]:
         0.0 if expected_turns_left < 0 else expected_turns_left / average_game_length
     )
 
-    weights = (1, 3, 5, 7)
+    weights = (1, 3, 5, 7)  # за сколько ходов делается 2 шт. на стандартных рецептах
     freecast_bonus = 10
 
     result = freecast_bonus if learn.is_freecast() else 0
@@ -364,17 +364,19 @@ def main() -> None:
         can_learn_table = [
             (p, orig, can, learn) for (p, orig, can, learn) in learn_table if can
         ]
+        log(learn_table)
+        log(can_learn_table)
 
         max_brew = most_expensive_possible_brew(game.my_witch, game.brews)
         learn_result, msg = maybe_learn_something(game.my_witch, game.learns)
 
         if can_learn_table:
-            profit, orig, _, best_learn = learn_table[0]
+            profit, orig, _, best_learn = can_learn_table[0]
             best_learn.learn(f"learn profit {profit}(base={orig})")
         elif learn_table:
-            double_blue = [c for c in w.casts if c.delta == (2, 0, 0, 0)][0]
+            double_blue = [c for c in game.my_witch.casts if c.delta == (2, 0, 0, 0)][0]
             if double_blue.castable:
-                double_blue.cast(f"need to learn {learn_table[0][2].action_id}")
+                double_blue.cast(f"need to learn {learn_table[0][3].action_id}")
             else:
                 Rest().rest("need more blues")
         elif max_brew:
