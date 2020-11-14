@@ -1,7 +1,6 @@
 import random
 import sys
-from dataclasses import dataclass, replace
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Dict, List, NamedTuple, Optional, Tuple, Union
 import time
 
 random.seed("witch brews")
@@ -11,36 +10,18 @@ def log(x):
     print(x, file=sys.stderr, flush=True)
 
 
-class BaseAction:
-    def smart_action(self, msg="") -> None:
-        if isinstance(self, Brew):
-            self.brew(msg)
-        elif isinstance(self, Cast):
-            self.cast(msg)
-        elif isinstance(self, Learn):
-            self.learn(msg)
-        elif isinstance(self, Rest):
-            self.rest(msg)
-        else:
-            raise ValueError(f"Unknown action {self}")
-
-
-@dataclass(frozen=True)
-class Action(BaseAction):
+class Brew(NamedTuple):
     action_id: int
     delta: Tuple[int, ...]
-
-
-@dataclass(frozen=True)
-class Brew(Action):
     price: int
 
     def brew(self, msg: str = "") -> None:
         print(f"BREW {self.action_id} {msg}")
 
 
-@dataclass(frozen=True)
-class Cast(Action):
+class Cast(NamedTuple):
+    action_id: int
+    delta: Tuple[int, ...]
     castable: bool
     repeatable: bool
 
@@ -50,8 +31,9 @@ class Cast(Action):
         print(f"CAST {self.action_id} {msg}")
 
 
-@dataclass(frozen=True)
-class Learn(Action):
+class Learn(NamedTuple):
+    action_id: int
+    delta: Tuple[int, ...]
     tome_index: int
     tax_count: int
     repeatable: bool
@@ -63,14 +45,12 @@ class Learn(Action):
         print(f"LEARN {self.action_id} {msg}")
 
 
-@dataclass(frozen=True)
-class Rest(BaseAction):
+class Rest:
     def rest(self, msg: str = "") -> None:
         print(f"REST {msg}")
 
 
-@dataclass(frozen=True)
-class Witch:
+class Witch(NamedTuple):
     inventory: Tuple[int, ...]
     casts: Tuple[Cast, ...]
 
@@ -91,13 +71,13 @@ class Witch:
 
     def cast(self, cast: Cast) -> "Witch":
         new_casts = tuple(
-            replace(c, castable=False) if c == cast else c for c in self.casts
+            c._replace(castable=False) if c == cast else c for c in self.casts
         )
         new_inventory = add_inventories(self.inventory, cast.delta)
-        return replace(self, inventory=new_inventory, casts=new_casts)
+        return self._replace(inventory=new_inventory, casts=new_casts)
 
     def rest(self) -> "Witch":
-        return replace(self, casts=tuple(replace(c, castable=True) for c in self.casts))
+        return self._replace(casts=tuple(c._replace(castable=True) for c in self.casts))
 
     def can_learn(self, learn: Learn) -> bool:
         return self.inventory[0] >= learn.tome_index
@@ -112,8 +92,7 @@ class Witch:
             ),
         )
         add_blues = min(learn.tax_count, 10 - sum(self.inventory))
-        return replace(
-            self,
+        return self._replace(
             inventory=add_inventories(self.inventory, (add_blues, 0, 0, 0)),
             casts=new_casts,
         )
@@ -130,14 +109,12 @@ def mul_inventories(x: Tuple[int, ...], y: Tuple[int, ...]) -> Tuple[int, ...]:
 BfsActions = Union[Rest, Cast, Learn]
 
 
-@dataclass(frozen=True)
-class BfsSuccess:
+class BfsSuccess(NamedTuple):
     actions: List[BfsActions]
     target: Brew
 
 
-@dataclass(frozen=True)
-class BfsFailure:
+class BfsFailure(NamedTuple):
     message: str
 
 
@@ -193,18 +170,7 @@ def bfs_fastest_brew(
             prev[new_witch] = cur
             actions[new_witch] = cast
         # rest
-        all_castable = tuple(
-            [
-                Cast(
-                    action_id=c.action_id,
-                    delta=c.delta,
-                    castable=True,
-                    repeatable=c.repeatable,
-                )
-                for c in cur.casts
-            ]
-        )
-        rested_witch = Witch(inventory=cur.inventory, casts=tuple(all_castable))
+        rested_witch = cur.rest()
         if rested_witch not in prev:
             queue.append(rested_witch)
             prev[rested_witch] = cur
