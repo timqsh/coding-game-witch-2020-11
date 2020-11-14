@@ -10,6 +10,11 @@ def log(x):
     print(x, file=sys.stderr, flush=True)
 
 
+################
+# Datastructures
+################
+
+
 class Brew(NamedTuple):
     action_id: int
     delta: Tuple[int, ...]
@@ -91,11 +96,18 @@ class Witch(NamedTuple):
                 repeatable=learn.repeatable,
             ),
         )
-        add_blues = min(learn.tax_count, 10 - sum(self.inventory))
+        remove_blues = learn.tome_index
+        new_inventory = add_inventories(self.inventory, (-remove_blues, 0, 0, 0))
+        add_blues = min(learn.tax_count, 10 - sum(new_inventory))
         return self._replace(
-            inventory=add_inventories(self.inventory, (add_blues, 0, 0, 0)),
+            inventory=add_inventories(new_inventory, (add_blues, 0, 0, 0)),
             casts=new_casts,
         )
+
+
+#################
+# Basic Functions
+#################
 
 
 def add_inventories(x: Tuple[int, ...], y: Tuple[int, ...]) -> Tuple[int, ...]:
@@ -105,6 +117,10 @@ def add_inventories(x: Tuple[int, ...], y: Tuple[int, ...]) -> Tuple[int, ...]:
 def mul_inventories(x: Tuple[int, ...], y: Tuple[int, ...]) -> Tuple[int, ...]:
     return tuple(map(lambda t: t[0] * t[1], zip(x, y)))
 
+
+######################
+# Breadth First Search
+######################
 
 BfsActions = Union[Rest, Cast, Learn]
 
@@ -118,9 +134,42 @@ class BfsFailure(NamedTuple):
     message: str
 
 
+def maybe_stop_bfs(
+    brews: List[Brew],
+    cur: Witch,
+    actions: Dict[Witch, Optional[BfsActions]],
+    prev: Dict[Witch, Optional[Witch]],
+) -> Union[BfsSuccess, None]:
+    can_brew_something = False
+    o = None
+    for o in brews:
+        if cur.can_brew(o):
+            can_brew_something = True
+            break
+    if can_brew_something:
+        result: List[BfsActions] = []
+        backtrack: Optional[Witch] = cur
+        while backtrack is not None:
+            action = actions[backtrack]
+            if action is None:
+                break
+            result.append(action)
+            backtrack = prev[backtrack]
+        return BfsSuccess(result, o)
+    return None
+
+
 def bfs_fastest_brew(
-    start_witch: Witch, brews: List[Brew], learns: List[Learn], deadline
+    start_witch: Witch, brews: List[Brew], learns: List[Learn], deadline: float
 ) -> Union[BfsSuccess, BfsFailure]:
+    "Find shortest path to some brew"
+
+    def add_witch_to_queue(w: Witch, a: BfsActions):
+        if w not in prev:
+            queue.append(w)
+            prev[w] = cur
+            actions[w] = a
+
     queue = [start_witch]
     prev: Dict[Witch, Optional[Witch]] = {start_witch: None}
     actions: Dict[Witch, Optional[BfsActions]] = {start_witch: None}
@@ -131,51 +180,25 @@ def bfs_fastest_brew(
             return BfsFailure(f"T/O {iterations}M")
         cur = queue.pop(0)
 
-        # break
-        can_brew_something = False
-        o = None
-        for o in brews:
-            if cur.can_brew(o):
-                can_brew_something = True
-                break
-        if can_brew_something:
-            result: List[BfsActions] = []
-            backtrack: Optional[Witch] = cur
-            while backtrack is not None:
-                action = actions[backtrack]
-                if action is None:
-                    break
-                result.append(action)
-                backtrack = prev[backtrack]
-            return BfsSuccess(result, o)
+        result = maybe_stop_bfs(brews, cur, actions, prev)
+        if result is not None:
+            return result
 
-        # learn
         if iterations == 1 and learns:
-            first_tome = learns[0]
-            if first_tome.tax_count > 0:
-                new_witch = cur.learn(first_tome)
-                if new_witch in prev:
-                    continue
-                queue.append(new_witch)
-                prev[new_witch] = cur
-                actions[new_witch] = first_tome
-        # cast
+            for learn in learns:
+                if cur.can_learn(learn):
+                    add_witch_to_queue(cur.learn(learn), learn)
         for cast in cur.casts:
             if not cur.can_cast(cast):
                 continue
-            new_witch = cur.cast(cast)
-            if new_witch in prev:
-                continue
-            queue.append(new_witch)
-            prev[new_witch] = cur
-            actions[new_witch] = cast
-        # rest
-        rested_witch = cur.rest()
-        if rested_witch not in prev:
-            queue.append(rested_witch)
-            prev[rested_witch] = cur
-            actions[rested_witch] = Rest()
+            add_witch_to_queue(cur.cast(cast), cast)
+        add_witch_to_queue(cur.rest(), Rest())
     return BfsFailure(f"not found after {iterations} moves")
+
+
+#################
+# Game Input Read
+#################
 
 
 class GameInput:
@@ -254,6 +277,11 @@ class GameInput:
         self.my_witch = Witch(inventory=tuple(inventory), casts=tuple(casts))
 
 
+#########################
+# Strategies & Heuristics
+#########################
+
+
 def most_expensive_possible_brew(w: Witch, brews: List[Brew]) -> Optional[Brew]:
     max_price = 0
     max_brew = None
@@ -287,6 +315,11 @@ def learn_profit(learn: Learn, w: Witch, turn) -> Tuple[float, int]:
     return result * learn_diminishing_coefficient, result
 
 
+###########
+# Main loop
+###########
+
+
 def main() -> None:
     turn = 0
     while True:
@@ -310,8 +343,6 @@ def main() -> None:
         can_learn_table = [
             (p, orig, can, learn) for (p, orig, can, learn) in learn_table if can
         ]
-        log(learn_table)
-        log(can_learn_table)
 
         max_brew = most_expensive_possible_brew(game.my_witch, game.brews)
 
@@ -359,7 +390,7 @@ def main() -> None:
                     and first_tome.tax_count >= 3
                     and sum(game.my_witch.inventory) <= 7
                 ):
-                    first_tome.learn(" -> get some tax at least")
+                    first_tome.learn(result.message + " -> get some tax at least")
                 elif game.my_witch.available_casts():
                     random_cast = random.choice(game.my_witch.available_casts())
                     random_cast.cast(result.message + " -> cast random")
