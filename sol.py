@@ -330,6 +330,7 @@ def main() -> None:
         start_time = time.time()
 
         profit_worth_to_learn = 5
+        profit_worth_to_make_blues_and_learn = 6
         learn_table = [
             (*learn_profit(s, game.my_witch, turn), game.my_witch.can_learn(s), s)
             for s in game.learns
@@ -349,7 +350,7 @@ def main() -> None:
         if can_learn_table:
             profit, orig, _, best_learn = can_learn_table[0]
             best_learn.learn(f"learn profit {profit}(base={orig})")
-        elif learn_table:
+        elif learn_table and learn_table[0][0] > profit_worth_to_make_blues_and_learn:
             double_blue = [c for c in game.my_witch.casts if c.delta == (2, 0, 0, 0)][0]
             if double_blue.castable:
                 double_blue.cast(f"need to learn {learn_table[0][3].action_id}")
