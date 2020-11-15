@@ -404,9 +404,9 @@ def main() -> None:
                 if c.delta[1] == c.delta[2] == c.delta[3] == 0
             ]
             if game.learns:
-                first_tome = [t for t in game.learns if t.tome_index == 0][0]
-                if first_tome.tax_count >= 2:
-                    blue_generator.append(first_tome)
+                first_tome_to_learn = [t for t in game.learns if t.tome_index == 0][0]
+                if first_tome_to_learn.tax_count >= 2:
+                    blue_generator.append(first_tome_to_learn)
             if blue_generator:
                 best_blue_generator = max(
                     blue_generator, key=lambda i: (i.delta[0], isinstance(i, Learn))
