@@ -1,6 +1,6 @@
 import random
 import sys
-from typing import Dict, List, NamedTuple, Optional, Tuple, Union
+from typing import Dict, List, NamedTuple, Optional, Tuple, Union, FrozenSet
 import time
 
 random.seed("witch brews")
@@ -57,7 +57,7 @@ class Rest:
 
 class Witch(NamedTuple):
     inventory: Tuple[int, ...]
-    casts: Tuple[Cast, ...]
+    casts: FrozenSet[Cast]
 
     def can_brew(self, brew: Brew) -> bool:
         return all(i >= -d for i, d in zip(self.inventory, brew.delta))
@@ -77,7 +77,7 @@ class Witch(NamedTuple):
 
     # @profile
     def cast(self, cast: Cast) -> "Witch":
-        new_casts = tuple(
+        new_casts = frozenset(
             Cast(c.action_id, c.delta, False, c.repeatable)
             if c.action_id == cast.action_id
             else c
@@ -89,7 +89,7 @@ class Witch(NamedTuple):
     def rest(self) -> "Witch":
         return Witch(
             inventory=self.inventory,
-            casts=tuple(
+            casts=frozenset(
                 Cast(c.action_id, c.delta, True, c.repeatable) if not c.castable else c
                 for c in self.casts
             ),
@@ -99,13 +99,15 @@ class Witch(NamedTuple):
         return self.inventory[0] >= learn.tome_index
 
     def learn(self, learn: Learn) -> "Witch":
-        new_casts = self.casts + (
-            Cast(
-                action_id=77777,
-                delta=learn.delta,
-                castable=True,
-                repeatable=learn.repeatable,
-            ),
+        new_casts = self.casts | frozenset(
+            [
+                Cast(
+                    action_id=77777,
+                    delta=learn.delta,
+                    castable=True,
+                    repeatable=learn.repeatable,
+                )
+            ]
         )
         remove_blues = learn.tome_index
         new_inventory = add_inventories(self.inventory, (-remove_blues, 0, 0, 0))

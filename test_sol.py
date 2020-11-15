@@ -6,11 +6,13 @@ def test_bfs():
     result = bfs_fastest_brew(
         Witch(
             (3, 0, 0, 0),
-            (
-                Cast(777, (2, 0, 0, 0), castable=True, repeatable=False),
-                Cast(888, (-1, 1, 0, 0), castable=True, repeatable=False),
-                Cast(999, (0, -1, 1, 0), castable=True, repeatable=False),
-                Cast(666, (0, 0, -1, 1), castable=True, repeatable=False),
+            frozenset(
+                [
+                    Cast(777, (2, 0, 0, 0), castable=True, repeatable=False),
+                    Cast(888, (-1, 1, 0, 0), castable=True, repeatable=False),
+                    Cast(999, (0, -1, 1, 0), castable=True, repeatable=False),
+                    Cast(666, (0, 0, -1, 1), castable=True, repeatable=False),
+                ]
             ),
         ),
         brews=[Brew(action_id=111, delta=(0, 0, 0, -4), price=100500)],
@@ -26,13 +28,15 @@ def test_bfs_repeat():
     result = bfs_fastest_brew(
         Witch(
             (3, 0, 0, 0),
-            (
-                Cast(777, (2, 0, 0, 0), castable=True, repeatable=False),
-                Cast(888, (-1, 1, 0, 0), castable=True, repeatable=False),
-                Cast(999, (0, -1, 1, 0), castable=True, repeatable=False),
-                Cast(666, (0, 0, -1, 1), castable=True, repeatable=False),
-                Cast(555, (-2, 2, 0, 0), castable=True, repeatable=True),
-                Cast(555, (4, 0, 0, 0), castable=True, repeatable=False),
+            frozenset(
+                [
+                    Cast(777, (2, 0, 0, 0), castable=True, repeatable=False),
+                    Cast(888, (-1, 1, 0, 0), castable=True, repeatable=False),
+                    Cast(999, (0, -1, 1, 0), castable=True, repeatable=False),
+                    Cast(666, (0, 0, -1, 1), castable=True, repeatable=False),
+                    Cast(555, (-2, 2, 0, 0), castable=True, repeatable=True),
+                    Cast(555, (4, 0, 0, 0), castable=True, repeatable=False),
+                ]
             ),
         ),
         brews=[Brew(action_id=111, delta=(0, -4, 0, 0), price=100500)],
@@ -48,40 +52,87 @@ def test_bfs_timeout():
     params = (
         Witch(
             inventory=(0, 0, 0, 0),
-            casts=(
-                Cast(
-                    action_id=82, delta=(2, 0, 0, 0), castable=False, repeatable=False
-                ),
-                Cast(
-                    action_id=83, delta=(-1, 1, 0, 0), castable=True, repeatable=False
-                ),
-                Cast(
-                    action_id=84, delta=(0, -1, 1, 0), castable=True, repeatable=False
-                ),
-                Cast(
-                    action_id=85, delta=(0, 0, -1, 1), castable=True, repeatable=False
-                ),
-                Cast(
-                    action_id=88, delta=(-3, 3, 0, 0), castable=False, repeatable=True
-                ),
-                Cast(action_id=90, delta=(1, 0, 1, 0), castable=True, repeatable=False),
-                Cast(action_id=93, delta=(-4, 0, 2, 0), castable=True, repeatable=True),
-                Cast(action_id=96, delta=(0, 0, 0, 1), castable=True, repeatable=False),
-                Cast(
-                    action_id=100, delta=(1, 1, 0, 0), castable=False, repeatable=False
-                ),
-                Cast(
-                    action_id=101, delta=(-5, 0, 0, 2), castable=True, repeatable=True
-                ),
-                Cast(
-                    action_id=102, delta=(-3, 0, 0, 1), castable=True, repeatable=True
-                ),
-                Cast(
-                    action_id=103, delta=(3, -1, 0, 0), castable=True, repeatable=True
-                ),
-                Cast(
-                    action_id=104, delta=(3, 0, 0, 0), castable=True, repeatable=False
-                ),
+            casts=frozenset(
+                [
+                    Cast(
+                        action_id=82,
+                        delta=(2, 0, 0, 0),
+                        castable=False,
+                        repeatable=False,
+                    ),
+                    Cast(
+                        action_id=83,
+                        delta=(-1, 1, 0, 0),
+                        castable=True,
+                        repeatable=False,
+                    ),
+                    Cast(
+                        action_id=84,
+                        delta=(0, -1, 1, 0),
+                        castable=True,
+                        repeatable=False,
+                    ),
+                    Cast(
+                        action_id=85,
+                        delta=(0, 0, -1, 1),
+                        castable=True,
+                        repeatable=False,
+                    ),
+                    Cast(
+                        action_id=88,
+                        delta=(-3, 3, 0, 0),
+                        castable=False,
+                        repeatable=True,
+                    ),
+                    Cast(
+                        action_id=90,
+                        delta=(1, 0, 1, 0),
+                        castable=True,
+                        repeatable=False,
+                    ),
+                    Cast(
+                        action_id=93,
+                        delta=(-4, 0, 2, 0),
+                        castable=True,
+                        repeatable=True,
+                    ),
+                    Cast(
+                        action_id=96,
+                        delta=(0, 0, 0, 1),
+                        castable=True,
+                        repeatable=False,
+                    ),
+                    Cast(
+                        action_id=100,
+                        delta=(1, 1, 0, 0),
+                        castable=False,
+                        repeatable=False,
+                    ),
+                    Cast(
+                        action_id=101,
+                        delta=(-5, 0, 0, 2),
+                        castable=True,
+                        repeatable=True,
+                    ),
+                    Cast(
+                        action_id=102,
+                        delta=(-3, 0, 0, 1),
+                        castable=True,
+                        repeatable=True,
+                    ),
+                    Cast(
+                        action_id=103,
+                        delta=(3, -1, 0, 0),
+                        castable=True,
+                        repeatable=True,
+                    ),
+                    Cast(
+                        action_id=104,
+                        delta=(3, 0, 0, 0),
+                        castable=True,
+                        repeatable=False,
+                    ),
+                ]
             ),
         ),
         [
@@ -136,7 +187,7 @@ def test_bfs_timeout():
             ),
         ],
     )
-    result = bfs_fastest_brew(*params, deadline=time.time())
+    result = bfs_fastest_brew(*params, deadline=time.time() + 9999999999)
     assert not isinstance(result, BfsSuccess)
     # path, _, _ = bfs_best_path(result)
     # assert len(result) == 5
