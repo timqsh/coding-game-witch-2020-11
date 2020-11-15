@@ -172,28 +172,29 @@ def bfs_fastest_brew(
         iterations += 1
         if time.time() >= deadline:
             return BfsFailure(f"T/O {iterations}M")
-        cur = queue.pop(0)
+        current_witch = queue.pop(0)
 
-        result = maybe_stop_bfs(brews, cur, actions, prev)
+        result = maybe_stop_bfs(brews, current_witch, actions, prev)
         if result is not None:
             return result
 
         if iterations == 1 and learns:
             for learn in learns:
-                if cur.can_learn(learn):
-                    new_witch = cur.learn(learn)
+                if current_witch.can_learn(learn):
+                    new_witch = current_witch.learn(learn)
                     if new_witch not in prev:
                         queue.append(new_witch)
-                        prev[new_witch] = cur
+                        prev[new_witch] = current_witch
                         actions[new_witch] = learn
-        for cast in cur.casts:
-            if not cur.can_cast(cast):
+        for cast in current_witch.casts:
+            if not current_witch.can_cast(cast):
                 continue
-            new_witch = cur.cast(cast)
+            new_witch = current_witch.cast(cast)
             if new_witch not in prev:
                 queue.append(new_witch)
-                prev[new_witch] = cur
+                prev[new_witch] = current_witch
                 actions[new_witch] = (cast, 1)
+            # multicast
             if cast.repeatable:
                 cast_count = 1
                 while new_witch.can_cast(cast):
@@ -201,12 +202,12 @@ def bfs_fastest_brew(
                     new_witch = new_witch.cast(cast)
                     if new_witch not in prev:
                         queue.append(new_witch)
-                        prev[new_witch] = cur
+                        prev[new_witch] = current_witch
                         actions[new_witch] = (cast, cast_count)
-        new_witch = cur.rest()
+        new_witch = current_witch.rest()
         if new_witch not in prev:
             queue.append(new_witch)
-            prev[new_witch] = cur
+            prev[new_witch] = current_witch
             actions[new_witch] = Rest()
     return BfsFailure(f"not found after {iterations} moves")
 
