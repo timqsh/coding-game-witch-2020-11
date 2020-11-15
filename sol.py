@@ -143,37 +143,29 @@ BfsActions = Union[Rest, BfsCast, Learn]
 
 
 class BfsSuccess(NamedTuple):
-    actions: List[BfsActions]
-    target: Brew
+    prev: Dict[Witch, Optional[Witch]]
+    actions: Dict[Witch, Optional[BfsActions]]
+    final_nodes: List[Tuple[Witch, Brew]]
 
 
 class BfsFailure(NamedTuple):
     message: str
 
 
-def maybe_stop_bfs(
-    brews: List[Brew],
-    cur: Witch,
-    actions: Dict[Witch, Optional[BfsActions]],
+def bfs_get_path(
+    witch: Witch,
     prev: Dict[Witch, Optional[Witch]],
-) -> Union[BfsSuccess, None]:
-    can_brew_something = False
-    o = None
-    for o in brews:
-        if cur.can_brew(o):
-            can_brew_something = True
+    actions: Dict[Witch, Optional[BfsActions]],
+) -> List[BfsActions]:
+    result: List[BfsActions] = []
+    backtrack: Optional[Witch] = witch
+    while backtrack is not None:
+        action = actions[backtrack]
+        if action is None:
             break
-    if can_brew_something:
-        result: List[BfsActions] = []
-        backtrack: Optional[Witch] = cur
-        while backtrack is not None:
-            action = actions[backtrack]
-            if action is None:
-                break
-            result.append(action)
-            backtrack = prev[backtrack]
-        return BfsSuccess(result, o)
-    return None
+        result.append(action)
+        backtrack = prev[backtrack]
+    return result[::-1]
 
 
 # @profile
@@ -184,16 +176,25 @@ def bfs_fastest_brew(
     queue = [start_witch]
     prev: Dict[Witch, Optional[Witch]] = {start_witch: None}
     actions: Dict[Witch, Optional[BfsActions]] = {start_witch: None}
+    final_nodes: List[Tuple[Witch, Brew]] = []
     iterations = 0
     while queue:
         iterations += 1
         if time.time() >= deadline:
-            return BfsFailure(f"T/O {iterations}M")
+            if final_nodes:
+                return BfsSuccess(prev, actions, final_nodes)
+            else:
+                return BfsFailure(f"T/O {iterations}M")
         current_witch = queue.pop(0)
 
-        result = maybe_stop_bfs(brews, current_witch, actions, prev)
-        if result is not None:
-            return result
+        can_brew_something = False
+        o = None
+        for o in brews:
+            if current_witch.can_brew(o):
+                can_brew_something = True
+                break
+        if can_brew_something:
+            final_nodes.append((current_witch, o))
 
         if iterations == 1 and learns:
             for learn in learns:
@@ -396,7 +397,7 @@ def main() -> None:
             max_brew.brew("BREW!")
         elif can_learn_table:
             profit, orig, _, best_learn = can_learn_table[0]
-            best_learn.learn(f"learn profit {profit}(base={orig})")
+            best_learn.learn(f"learn profit {profit:.1f}(base={orig})")
         elif learn_table and learn_table[0][0] > profit_worth_to_make_blues_and_learn:
             blue_generator: List[Union[Learn, Cast]] = [
                 c
@@ -436,11 +437,32 @@ def main() -> None:
                 deadline=start_time + 0.040,
             )
             if isinstance(result, BfsSuccess):
+
+                prev, actions, final_nodes = result
+                best_path = None
+                best_score = 0.0
+                best_brew = None
+                for witch, brew in final_nodes:
+                    path = bfs_get_path(witch, prev, actions)
+                    moves = len(path)
+                    price = brew.price
+                    score = price  # / moves
+                    if score > best_score:
+                        best_score = score
+                        best_path = path
+                        best_brew = brew
+
+                if best_path is None or best_brew is None:
+                    raise ValueError("BFS returned Success but no path/brew")
+                first = best_path[0]
+
                 delta_time = time.time() - start_time
                 delta_time_str = f"{delta_time*1000:.0f}ms"
-                price = result.target.price
-                countdown_text = f"T-{len(result.actions)} {price}💎 {delta_time_str}"
-                first = result.actions[-1]
+                countdown_text = (
+                    f"T-{len(best_path)} {delta_time_str} "
+                    f"score={best_score:.1f} 💎{best_brew.price}"
+                )
+
                 if isinstance(first, Rest):
                     first.rest(countdown_text)
                 elif isinstance(first, BfsCast):
