@@ -159,17 +159,11 @@ def maybe_stop_bfs(
     return None
 
 
+# @profile
 def bfs_fastest_brew(
     start_witch: Witch, brews: List[Brew], learns: List[Learn], deadline: float
 ) -> Union[BfsSuccess, BfsFailure]:
     "Find shortest path to some brew"
-
-    def add_witch_to_queue(w: Witch, a: BfsActions):
-        if w not in prev:
-            queue.append(w)
-            prev[w] = cur
-            actions[w] = a
-
     queue = [start_witch]
     prev: Dict[Witch, Optional[Witch]] = {start_witch: None}
     actions: Dict[Witch, Optional[BfsActions]] = {start_witch: None}
@@ -187,12 +181,24 @@ def bfs_fastest_brew(
         if iterations == 1 and learns:
             for learn in learns:
                 if cur.can_learn(learn):
-                    add_witch_to_queue(cur.learn(learn), learn)
+                    new_witch = cur.learn(learn)
+                    if new_witch not in prev:
+                        queue.append(new_witch)
+                        prev[new_witch] = cur
+                        actions[new_witch] = learn
         for cast in cur.casts:
             if not cur.can_cast(cast):
                 continue
-            add_witch_to_queue(cur.cast(cast), cast)
-        add_witch_to_queue(cur.rest(), Rest())
+            new_witch = cur.cast(cast)
+            if new_witch not in prev:
+                queue.append(new_witch)
+                prev[new_witch] = cur
+                actions[new_witch] = cast
+        new_witch = cur.rest()
+        if new_witch not in prev:
+            queue.append(new_witch)
+            prev[new_witch] = cur
+            actions[new_witch] = Rest()
     return BfsFailure(f"not found after {iterations} moves")
 
 
@@ -295,7 +301,7 @@ def most_expensive_possible_brew(w: Witch, brews: List[Brew]) -> Optional[Brew]:
 
 
 def learn_profit(learn: Learn, w: Witch, turn) -> Tuple[float, int]:
-    average_game_length = 50
+    average_game_length = 40
     expected_turns_left = average_game_length - turn
     learn_diminishing_coefficient = (
         0.0 if expected_turns_left < 0 else expected_turns_left / average_game_length
