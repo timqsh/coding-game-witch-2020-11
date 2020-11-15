@@ -248,7 +248,7 @@ def bfs_fastest_brew(
     if final_nodes:
         return BfsSuccess(prev, actions, final_nodes)
     else:
-        return BfsFailure(f"T/O {iterations}M")
+        return BfsFailure(f"T/O {len(prev)}M")
 
 
 #################
@@ -329,7 +329,7 @@ class GameInput:
                 )
         *inventory, score = [int(j) for j in input().split()]
         _ = [int(j) for j in input().split()]  # other player
-        self.my_witch = Witch(inventory=tuple(inventory), casts=tuple(casts))
+        self.my_witch = Witch(inventory=tuple(inventory), casts=frozenset(casts))
 
 
 #########################
