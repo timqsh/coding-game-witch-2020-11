@@ -321,7 +321,15 @@ def spell_delta_profit(x: Union[Cast, Learn]):
     return sum(mul_inventories(x.delta, weights))
 
 
+def is_direct_upgrade(x: Union[Cast, Learn], y: Union[Cast, Learn]) -> bool:
+    return all(xx >= yy for xx, yy in zip(x.delta, y.delta))
+
+
 def learn_profit(learn: Learn, w: Witch, turn) -> Tuple[float, int]:
+    already_have_direct_upgrade = any(is_direct_upgrade(c, learn) for c in w.casts)
+    if already_have_direct_upgrade:
+        return 0.0, 0
+
     average_game_length = 40
     expected_turns_left = average_game_length - turn
     learn_diminishing_coefficient = (
@@ -379,18 +387,27 @@ def main() -> None:
             profit, orig, _, best_learn = can_learn_table[0]
             best_learn.learn(f"learn profit {profit}(base={orig})")
         elif learn_table and learn_table[0][0] > profit_worth_to_make_blues_and_learn:
-            log(game.my_witch.available_casts())
-            blue_generator = [
+            blue_generator: List[Union[Learn, Cast]] = [
                 c
                 for c in game.my_witch.available_casts()
                 if c.delta[1] == c.delta[2] == c.delta[3] == 0
             ]
-            log(blue_generator)
+            if game.learns:
+                first_tome = [t for t in game.learns if t.tome_index == 0][0]
+                if first_tome.tax_count >= 2:
+                    blue_generator.append(first_tome)
             if blue_generator:
-                best_blue_generator = max(blue_generator, key=lambda i: i[0])
-                best_blue_generator.cast(
-                    1, f"get blues to learn {learn_table[0][3].action_id}"
+                best_blue_generator = max(
+                    blue_generator, key=lambda i: (i.delta[0], isinstance(i, Learn))
                 )
+                if isinstance(best_blue_generator, Cast):
+                    best_blue_generator.cast(
+                        1, f"get blues to learn {learn_table[0][3].action_id}"
+                    )
+                else:
+                    best_blue_generator.learn(
+                        f"learn to get blues to learn {learn_table[0][3].action_id} 😎"
+                    )
             else:
                 Rest().rest(f"need more blues to learn {learn_table[0][3].action_id}")
         else:
