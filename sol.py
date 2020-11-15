@@ -30,10 +30,10 @@ class Cast(NamedTuple):
     castable: bool
     repeatable: bool
 
-    def cast(self, msg: str = "") -> None:
+    def cast(self, num: int = 1, msg: str = "") -> None:
         if msg and msg[0].isdigit():
             msg = "|" + msg
-        print(f"CAST {self.action_id} {msg}")
+        print(f"CAST {self.action_id} {num} {msg}")
 
 
 class Learn(NamedTuple):
@@ -122,7 +122,7 @@ def mul_inventories(x: Tuple[int, ...], y: Tuple[int, ...]) -> Tuple[int, ...]:
 # Breadth First Search
 ######################
 
-BfsActions = Union[Rest, Cast, Learn]
+BfsActions = Union[Rest, Tuple[Cast, int], Learn]
 
 
 class BfsSuccess(NamedTuple):
@@ -193,7 +193,16 @@ def bfs_fastest_brew(
             if new_witch not in prev:
                 queue.append(new_witch)
                 prev[new_witch] = cur
-                actions[new_witch] = cast
+                actions[new_witch] = (cast, 1)
+            if cast.repeatable:
+                cast_count = 1
+                while new_witch.can_cast(cast):
+                    cast_count += 1
+                    new_witch = new_witch.cast(cast)
+                    if new_witch not in prev:
+                        queue.append(new_witch)
+                        prev[new_witch] = cur
+                        actions[new_witch] = (cast, cast_count)
         new_witch = cur.rest()
         if new_witch not in prev:
             queue.append(new_witch)
@@ -359,7 +368,7 @@ def main() -> None:
         elif learn_table and learn_table[0][0] > profit_worth_to_make_blues_and_learn:
             double_blue = [c for c in game.my_witch.casts if c.delta == (2, 0, 0, 0)][0]
             if double_blue.castable:
-                double_blue.cast(f"need to learn {learn_table[0][3].action_id}")
+                double_blue.cast(1, f"need to learn {learn_table[0][3].action_id}")
             else:
                 Rest().rest("need more blues")
         elif max_brew:
@@ -379,8 +388,12 @@ def main() -> None:
                 first = result.actions[-1]
                 if isinstance(first, Rest):
                     first.rest(countdown_text)
-                elif isinstance(first, Cast):
-                    first.cast(countdown_text)
+                elif isinstance(first, tuple) and isinstance(first[0], Cast):
+                    cast, num = first
+                    msg = countdown_text
+                    if num > 1:
+                        msg += "+ MULTICAST!!!"
+                    cast.cast(num, msg)
                 elif isinstance(first, Learn):
                     first.learn(f"{countdown_text} + learning!")
                 else:
@@ -400,7 +413,7 @@ def main() -> None:
                     first_tome.learn(result.message + " -> get some tax at least")
                 elif game.my_witch.available_casts():
                     random_cast = random.choice(game.my_witch.available_casts())
-                    random_cast.cast(result.message + " -> cast random")
+                    random_cast.cast(1, result.message + " -> cast random")
                 else:
                     Rest().rest(result.message + " -> rest")
 
