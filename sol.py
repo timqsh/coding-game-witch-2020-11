@@ -62,6 +62,7 @@ class Witch(NamedTuple):
     def can_brew(self, brew: Brew) -> bool:
         return all(i >= -d for i, d in zip(self.inventory, brew.delta))
 
+    # @profile
     def can_cast(self, cast: Cast) -> bool:
         if not cast.castable:
             return False
@@ -74,15 +75,25 @@ class Witch(NamedTuple):
     def available_casts(self) -> List[Cast]:
         return [c for c in self.casts if self.can_cast(c)]
 
+    # @profile
     def cast(self, cast: Cast) -> "Witch":
         new_casts = tuple(
-            c._replace(castable=False) if c == cast else c for c in self.casts
+            Cast(c.action_id, c.delta, False, c.repeatable)
+            if c.action_id == cast.action_id
+            else c
+            for c in self.casts
         )
         new_inventory = add_inventories(self.inventory, cast.delta)
-        return self._replace(inventory=new_inventory, casts=new_casts)
+        return Witch(inventory=new_inventory, casts=new_casts)
 
     def rest(self) -> "Witch":
-        return self._replace(casts=tuple(c._replace(castable=True) for c in self.casts))
+        return Witch(
+            inventory=self.inventory,
+            casts=tuple(
+                Cast(c.action_id, c.delta, True, c.repeatable) if not c.castable else c
+                for c in self.casts
+            ),
+        )
 
     def can_learn(self, learn: Learn) -> bool:
         return self.inventory[0] >= learn.tome_index
@@ -411,6 +422,13 @@ def main() -> None:
             else:
                 Rest().rest(f"need more blues to learn {learn_table[0][3].action_id}")
         else:
+            # log(
+            #     (
+            #         game.my_witch,
+            #         game.brews,
+            #         game.learns,
+            #     )
+            # )
             result = bfs_fastest_brew(
                 game.my_witch,
                 brews=game.brews,
