@@ -1,4 +1,4 @@
-from sol import BfsSuccess, Cast, bfs_fastest_brew, Witch, Brew, Learn
+from sol import BfsSuccess, Cast, bfs_fastest_brew, Witch, Brew, Learn, bfs_best_path
 import time
 
 
@@ -18,7 +18,8 @@ def test_bfs():
         deadline=time.time() + 99999999999,
     )
     assert isinstance(result, BfsSuccess)
-    assert len(result.actions) == 16
+    path, _, _ = bfs_best_path(result)
+    assert len(path) == 16
 
 
 def test_bfs_repeat():
@@ -39,7 +40,8 @@ def test_bfs_repeat():
         deadline=time.time() + 99999999999,
     )
     assert isinstance(result, BfsSuccess)
-    assert len(result.actions) == 2
+    path, _, _ = bfs_best_path(result)
+    assert len(path) == 2
 
 
 def test_bfs_timeout():
@@ -134,11 +136,12 @@ def test_bfs_timeout():
             ),
         ],
     )
-    result = bfs_fastest_brew(*params, deadline=time.time() + 9999999)
-    assert isinstance(result, BfsSuccess)
-    assert len(result.actions) == 5
+    result = bfs_fastest_brew(*params, deadline=time.time())
+    assert not isinstance(result, BfsSuccess)
+    # path, _, _ = bfs_best_path(result)
+    # assert len(result) == 5
 
 
 if __name__ == "__main__":
     # test_bfs()
-    test_bfs_timeout()
+    test_bfs()

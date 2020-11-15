@@ -168,6 +168,25 @@ def bfs_get_path(
     return result[::-1]
 
 
+def bfs_best_path(result: BfsSuccess) -> Tuple[List[BfsActions], Brew, float]:
+    prev, actions, final_nodes = result
+    best_path = None
+    best_score = 0.0
+    best_brew = None
+    for witch, brew in final_nodes:
+        path = bfs_get_path(witch, prev, actions)
+        # moves = len(path)
+        price = brew.price
+        score = price  # / moves
+        if score > best_score:
+            best_score = score
+            best_path = path
+            best_brew = brew
+    if best_path is None or best_brew is None:
+        raise ValueError("BFS returned Success but no path/brew")
+    return best_path, best_brew, best_score
+
+
 # @profile
 def bfs_fastest_brew(
     start_witch: Witch, brews: List[Brew], learns: List[Learn], deadline: float
@@ -181,10 +200,7 @@ def bfs_fastest_brew(
     while queue:
         iterations += 1
         if time.time() >= deadline:
-            if final_nodes:
-                return BfsSuccess(prev, actions, final_nodes)
-            else:
-                return BfsFailure(f"T/O {iterations}M")
+            break
         current_witch = queue.pop(0)
 
         can_brew_something = False
@@ -227,7 +243,10 @@ def bfs_fastest_brew(
             queue.append(new_witch)
             prev[new_witch] = current_witch
             actions[new_witch] = Rest()
-    return BfsFailure(f"not found after {iterations} moves")
+    if final_nodes:
+        return BfsSuccess(prev, actions, final_nodes)
+    else:
+        return BfsFailure(f"T/O {iterations}M")
 
 
 #################
@@ -437,23 +456,7 @@ def main() -> None:
                 deadline=start_time + 0.040,
             )
             if isinstance(result, BfsSuccess):
-
-                prev, actions, final_nodes = result
-                best_path = None
-                best_score = 0.0
-                best_brew = None
-                for witch, brew in final_nodes:
-                    path = bfs_get_path(witch, prev, actions)
-                    moves = len(path)
-                    price = brew.price
-                    score = price  # / moves
-                    if score > best_score:
-                        best_score = score
-                        best_path = path
-                        best_brew = brew
-
-                if best_path is None or best_brew is None:
-                    raise ValueError("BFS returned Success but no path/brew")
+                best_path, best_brew, best_score = bfs_best_path(result)
                 first = best_path[0]
 
                 delta_time = time.time() - start_time
