@@ -122,7 +122,13 @@ def mul_inventories(x: Tuple[int, ...], y: Tuple[int, ...]) -> Tuple[int, ...]:
 # Breadth First Search
 ######################
 
-BfsActions = Union[Rest, Tuple[Cast, int], Learn]
+
+class BfsCast(NamedTuple):
+    cast: Cast
+    num: int
+
+
+BfsActions = Union[Rest, BfsCast, Learn]
 
 
 class BfsSuccess(NamedTuple):
@@ -193,7 +199,7 @@ def bfs_fastest_brew(
             if new_witch not in prev:
                 queue.append(new_witch)
                 prev[new_witch] = current_witch
-                actions[new_witch] = (cast, 1)
+                actions[new_witch] = BfsCast(cast, 1)
             # multicast
             if cast.repeatable:
                 cast_count = 1
@@ -203,7 +209,7 @@ def bfs_fastest_brew(
                     if new_witch not in prev:
                         queue.append(new_witch)
                         prev[new_witch] = current_witch
-                        actions[new_witch] = (cast, cast_count)
+                        actions[new_witch] = BfsCast(cast, cast_count)
         new_witch = current_witch.rest()
         if new_witch not in prev:
             queue.append(new_witch)
@@ -310,6 +316,11 @@ def most_expensive_possible_brew(w: Witch, brews: List[Brew]) -> Optional[Brew]:
     return max_brew
 
 
+def spell_delta_profit(x: Union[Cast, Learn]):
+    weights = (1, 3, 5, 7)  # за сколько ходов делается 2 шт. на стандартных рецептах
+    return sum(mul_inventories(x.delta, weights))
+
+
 def learn_profit(learn: Learn, w: Witch, turn) -> Tuple[float, int]:
     average_game_length = 40
     expected_turns_left = average_game_length - turn
@@ -317,11 +328,10 @@ def learn_profit(learn: Learn, w: Witch, turn) -> Tuple[float, int]:
         0.0 if expected_turns_left < 0 else expected_turns_left / average_game_length
     )
 
-    weights = (1, 3, 5, 7)  # за сколько ходов делается 2 шт. на стандартных рецептах
     freecast_bonus = 10
-
     result = freecast_bonus if learn.is_freecast() else 0
-    result += sum(mul_inventories(learn.delta, weights))
+
+    result += spell_delta_profit(learn)
 
     free_slots = 10 - sum(w.inventory)
     result += min(learn.tax_count, free_slots)
@@ -363,17 +373,26 @@ def main() -> None:
 
         max_brew = most_expensive_possible_brew(game.my_witch, game.brews)
 
-        if can_learn_table:
+        if max_brew:
+            max_brew.brew("BREW!")
+        elif can_learn_table:
             profit, orig, _, best_learn = can_learn_table[0]
             best_learn.learn(f"learn profit {profit}(base={orig})")
         elif learn_table and learn_table[0][0] > profit_worth_to_make_blues_and_learn:
-            double_blue = [c for c in game.my_witch.casts if c.delta == (2, 0, 0, 0)][0]
-            if double_blue.castable:
-                double_blue.cast(1, f"need to learn {learn_table[0][3].action_id}")
+            log(game.my_witch.available_casts())
+            blue_generator = [
+                c
+                for c in game.my_witch.available_casts()
+                if c.delta[1] == c.delta[2] == c.delta[3] == 0
+            ]
+            log(blue_generator)
+            if blue_generator:
+                best_blue_generator = max(blue_generator, key=lambda i: i[0])
+                best_blue_generator.cast(
+                    1, f"get blues to learn {learn_table[0][3].action_id}"
+                )
             else:
-                Rest().rest("need more blues")
-        elif max_brew:
-            max_brew.brew("BREW!")
+                Rest().rest(f"need more blues to learn {learn_table[0][3].action_id}")
         else:
             result = bfs_fastest_brew(
                 game.my_witch,
@@ -389,12 +408,11 @@ def main() -> None:
                 first = result.actions[-1]
                 if isinstance(first, Rest):
                     first.rest(countdown_text)
-                elif isinstance(first, tuple) and isinstance(first[0], Cast):
-                    cast, num = first
+                elif isinstance(first, BfsCast):
                     msg = countdown_text
-                    if num > 1:
-                        msg += "+ MULTICAST!!!"
-                    cast.cast(num, msg)
+                    if first.num > 1:
+                        msg += " + MULTICAST!!!"
+                    first.cast.cast(first.num, msg)
                 elif isinstance(first, Learn):
                     first.learn(f"{countdown_text} + learning!")
                 else:
@@ -413,10 +431,12 @@ def main() -> None:
                 ):
                     first_tome.learn(result.message + " -> get some tax at least")
                 elif game.my_witch.available_casts():
-                    random_cast = random.choice(game.my_witch.available_casts())
-                    random_cast.cast(1, result.message + " -> cast random")
+                    best_cast = max(
+                        game.my_witch.available_casts(), key=spell_delta_profit
+                    )
+                    best_cast.cast(1, result.message + " -> cast best (i think)")
                 else:
-                    Rest().rest(result.message + " -> rest")
+                    Rest().rest(result.message + " -> can't cast -> rest")
 
 
 if __name__ == "__main__":

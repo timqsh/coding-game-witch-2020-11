@@ -1,4 +1,4 @@
-from sol import BfsSuccess, Cast, bfs_fastest_brew, Witch, Brew, main
+from sol import BfsSuccess, Cast, bfs_fastest_brew, Witch, Brew
 import time
 
 
